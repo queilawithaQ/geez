@@ -404,7 +404,7 @@ class FormulaInstaller
     options = display_options(formula).join(" ")
     oh1 "Installing #{Formatter.identifier(formula.full_name)} #{options}".strip if show_header?
 
-    if formula.tap&.installed? && !formula.tap&.private?
+    unless formula.tap&.private?
       action = "#{formula.full_name} #{options}".strip
       Utils::Analytics.report_event("install", action)
 
@@ -1074,34 +1074,8 @@ class FormulaInstaller
       -I #{$LOAD_PATH.join(File::PATH_SEPARATOR)}
       --
       #{HOMEBREW_LIBRARY_PATH}/postinstall.rb
+      #{formula.path}
     ]
-
-    # Use the formula from the keg if:
-    # * Installing from a local bottle, or
-    # * The formula doesn't exist in the tap (or the tap isn't installed), or
-    # * The formula in the tap has a different pkg_version.
-    # In all other cases, including if the formula from the keg is unreadable
-    # (third-party taps may `require` some of their own libraries), use the
-    # formula from the tap.
-    formula_path = begin
-      keg_formula_path = formula.opt_prefix/".brew/#{formula.name}.rb"
-      tap_formula_path = formula.path
-      keg_formula = Formulary.factory(keg_formula_path)
-      tap_formula = Formulary.factory(tap_formula_path) if tap_formula_path.exist?
-      other_version_installed = (keg_formula.pkg_version != tap_formula&.pkg_version)
-
-      if formula.local_bottle_path.present? ||
-         !tap_formula_path.exist? ||
-         other_version_installed
-        keg_formula_path
-      else
-        tap_formula_path
-      end
-    rescue FormulaUnreadableError
-      tap_formula_path
-    end
-
-    args << formula_path
 
     Utils.safe_fork do
       if Sandbox.available?
@@ -1189,7 +1163,7 @@ class FormulaInstaller
     tab.source["versions"]["stable"] = formula.stable.version.to_s
     tab.source["versions"]["version_scheme"] = formula.version_scheme
     tab.source["path"] = formula.specified_path.to_s
-    tab.source["tap_git_head"] = formula.tap&.installed? ? formula.tap&.git_head : nil
+    tab.source["tap_git_head"] = formula.tap&.git_head
     tab.tap = formula.tap
     tab.write
 
