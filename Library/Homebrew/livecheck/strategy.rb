@@ -179,49 +179,46 @@ module Homebrew
       def self.page_content(url)
         original_url = url
 
-        stderr = nil
-        [:default, :browser].each do |user_agent|
-          stdout, stderr, status = curl_with_workarounds(
-            *PAGE_CONTENT_CURL_ARGS, url,
-            **DEFAULT_CURL_OPTIONS,
-            user_agent: user_agent
-          )
-          next unless status.success?
+        stdout, stderr, status = curl_with_workarounds(
+          *PAGE_CONTENT_CURL_ARGS, url,
+          **DEFAULT_CURL_OPTIONS
+        )
 
-          # stdout contains the header information followed by the page content.
-          # We use #scrub here to avoid "invalid byte sequence in UTF-8" errors.
-          output = stdout.scrub
-
-          # Separate the head(s)/body and identify the final URL (after any
-          # redirections)
-          max_iterations = 5
-          iterations = 0
-          output = output.lstrip
-          while output.match?(%r{\AHTTP/[\d.]+ \d+}) && output.include?(HTTP_HEAD_BODY_SEPARATOR)
-            iterations += 1
-            raise "Too many redirects (max = #{max_iterations})" if iterations > max_iterations
-
-            head_text, _, output = output.partition(HTTP_HEAD_BODY_SEPARATOR)
-            output = output.lstrip
-
-            location = head_text[/^Location:\s*(.*)$/i, 1]
-            next if location.blank?
-
-            location.chomp!
-            # Convert a relative redirect URL to an absolute URL
-            location = URI.join(url, location) unless location.match?(PageMatch::URL_MATCH_REGEX)
-            final_url = location
-          end
-
-          data = { content: output }
-          data[:final_url] = final_url if final_url.present? && final_url != original_url
-          return data
+        unless status.success?
+          /^(?<error_msg>curl: \(\d+\) .+)/ =~ stderr
+          return {
+            messages: [error_msg.presence || "cURL failed without an error"],
+          }
         end
 
-        /^(?<error_msg>curl: \(\d+\) .+)/ =~ stderr
-        {
-          messages: [error_msg.presence || "cURL failed without an error"],
-        }
+        # stdout contains the header information followed by the page content.
+        # We use #scrub here to avoid "invalid byte sequence in UTF-8" errors.
+        output = stdout.scrub
+
+        # Separate the head(s)/body and identify the final URL (after any
+        # redirections)
+        max_iterations = 5
+        iterations = 0
+        output = output.lstrip
+        while output.match?(%r{\AHTTP/[\d.]+ \d+}) && output.include?(HTTP_HEAD_BODY_SEPARATOR)
+          iterations += 1
+          raise "Too many redirects (max = #{max_iterations})" if iterations > max_iterations
+
+          head_text, _, output = output.partition(HTTP_HEAD_BODY_SEPARATOR)
+          output = output.lstrip
+
+          location = head_text[/^Location:\s*(.*)$/i, 1]
+          next if location.blank?
+
+          location.chomp!
+          # Convert a relative redirect URL to an absolute URL
+          location = URI.join(url, location) unless location.match?(PageMatch::URL_MATCH_REGEX)
+          final_url = location
+        end
+
+        data = { content: output }
+        data[:final_url] = final_url if final_url.present? && final_url != original_url
+        data
       end
     end
   end
